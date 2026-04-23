@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# Model weights & checkpoints
+*.pth
+*.pt
+*.onnx
+
+# YOLO training output
+runs/
+yolo_data/
+yolo_classify/
+
+# Dataset images (large binary files)
+data/
+data_roboflow/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -17,6 +17,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms
 from sklearn.model_selection import train_test_split
 from PIL import Image
+from tqdm import tqdm
 
 
 # =============================================
@@ -231,7 +232,7 @@ def compute_metrics(logits, labels, threshold=0.5):
 # =============================================
 
 def train(
-    data_root  = "data/",
+    data_root  = "data_roboflow/",
     epochs     = 50,         
     batch_size = 16,
     lr         = 1e-3,
@@ -278,26 +279,30 @@ def train(
         # ===== Train ===== 
         model.train()
         train_loss = 0.0
-        for imgs, labels in train_loader:
+        train_bar = tqdm(train_loader, desc=f"Ep {epoch:03d}/{epochs} [Train]", leave=False)
+        for imgs, labels in train_bar:
             imgs, labels = imgs.to(device), labels.to(device)
             optimizer.zero_grad()
             loss = criterion(model(imgs), labels)
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+            train_bar.set_postfix(loss=f"{loss.item():.4f}")
         train_loss /= len(train_loader)
 
         # ===== Validate ===== 
         model.eval()
         val_loss = 0.0
         all_logits, all_labels = [], []
+        val_bar = tqdm(val_loader, desc=f"Ep {epoch:03d}/{epochs} [Val]  ", leave=False)
         with torch.no_grad():
-            for imgs, labels in val_loader:
+            for imgs, labels in val_bar:
                 imgs, labels = imgs.to(device), labels.to(device)
                 logits    = model(imgs)
                 val_loss += criterion(logits, labels).item()
                 all_logits.append(logits.cpu())
                 all_labels.append(labels.cpu())
+                val_bar.set_postfix(loss=f"{criterion(logits, labels).item():.4f}")
 
         val_loss   /= len(val_loader)
         logits_cat  = torch.cat(all_logits)
@@ -381,7 +386,7 @@ if __name__ == "__main__":
 
     # Train
     model, history = train(
-        data_root  = "data/",
+        data_root  = "data_roboflow/",
         epochs     = 50,
         batch_size = 16,
         lr         = 1e-3,
