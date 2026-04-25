@@ -13,7 +13,7 @@ cache: false
 device: cpu
 workers: 8
 project: runs
-name: waldo_yolo
+name: waldo_yolo4
 exist_ok: false
 pretrained: true
 optimizer: auto
@@ -107,4 +107,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: /Users/shirleyc/Documents/UNF/CAP4630 Intro to AI/ai_project_4/runs/classify/runs/waldo_yolo
+save_dir: /Users/shirleyc/Documents/UNF/CAP4630 Intro to AI/ai_project_4/runs/classify/runs/waldo_yolo4

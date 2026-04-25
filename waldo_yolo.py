@@ -10,6 +10,9 @@ Run:
 
 import os
 import shutil
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Agg")
 from sklearn.model_selection import train_test_split
 
 
@@ -18,7 +21,7 @@ from sklearn.model_selection import train_test_split
 # =====================================
 
 def prepare_dataset(
-    data_root = "data/",
+    data_root = "data_roboflow/",
     out_dir   = "yolo_data/",
     val_size  = 0.15,
     test_size = 0.15,
@@ -40,7 +43,8 @@ def prepare_dataset(
         if not os.path.isdir(src_dir):
             raise FileNotFoundError(f"Folder not found: {src_dir}")
 
-        files = [f for f in os.listdir(src_dir)]
+        files = [f for f in os.listdir(src_dir)
+                 if f.lower().endswith((".png", ".jpg", ".jpeg"))]
 
         train_f, test_f = train_test_split(
             files, test_size=test_size, random_state=seed)
@@ -61,7 +65,6 @@ def prepare_dataset(
               f"val={len(val_f)} | test={len(test_f)}")
 
     # Oversample the minority class to balance training.
-    # YOLO has no WeightedRandomSampler — oversampling is the equivalent fix.
     # Val and test are NOT oversampled — evaluation must reflect real distribution.
     waldo_train_dir    = os.path.join(out_dir, "train", "waldo")
     notwaldo_train_dir = os.path.join(out_dir, "train", "notwaldo")
@@ -159,7 +162,7 @@ def train(
 
 # Evaluates test set and reports Accuracy, Precision, Recall, F1.
 def evaluate(model_path, test_dir="yolo_data/test"):
-    
+
     from ultralytics import YOLO
 
     print(f"\n{'='*60}")
@@ -192,6 +195,34 @@ def evaluate(model_path, test_dir="yolo_data/test"):
     f1   = 2 * prec * rec / (prec + rec + 1e-6)
 
     print(f"  Acc: {acc:.3f} | Precision: {prec:.3f} | Recall: {rec:.3f} | F1: {f1:.3f}")
+
+    # Plot confusion matrix
+    matrix = [[tn, fp], [fn, tp]]
+    label_names = ["Not Waldo", "Waldo"]
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(matrix, interpolation="nearest", cmap="Blues")
+    plt.colorbar(im, ax=ax)
+
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, 1])
+    ax.set_xticklabels(label_names, fontsize=12)
+    ax.set_yticklabels(label_names, fontsize=12)
+    ax.set_xlabel("Predicted Label", fontsize=13)
+    ax.set_ylabel("True Label", fontsize=13)
+    ax.set_title("Confusion Matrix — YOLOv8n", fontsize=14, fontweight="bold")
+
+    thresh = max(tp, tn, fp, fn) / 2
+    for i, row in enumerate(matrix):
+        for j, val in enumerate(row):
+            ax.text(j, i, str(val), ha="center", va="center",
+                    color="white" if val > thresh else "black", fontsize=14, fontweight="bold")
+
+    plt.tight_layout()
+    save_path = "confusion_matrix_yolo.png"
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    print(f"  Confusion matrix saved: {save_path}")
 
     return {"accuracy": acc, "precision": prec, "recall": rec, "f1": f1}
 

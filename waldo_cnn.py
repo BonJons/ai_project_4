@@ -18,6 +18,9 @@ from torchvision import transforms
 from sklearn.model_selection import train_test_split
 from PIL import Image
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Agg")
 
 
 # =============================================
@@ -106,12 +109,15 @@ def build_splits(data_root, val_size=0.15, test_size=0.15, seed=42):
 
 def make_weighted_sampler(file_list):
     """
-    Oversampler to correctly handle any imbalanced data set
+    Balances sampling between Waldo and Not Waldo regardless of which class
+    is the majority. Each class is assigned a weight inversely proportional
+    to its count so both are sampled equally during training.
     """
     labels     = [l for _, l in file_list]
     n_waldo    = max(sum(labels), 1)
-    n_notwaldo = len(labels) - n_waldo
-    weight_map = {1: n_notwaldo / n_waldo, 0: 1.0}
+    n_notwaldo = max(len(labels) - n_waldo, 1)
+    n_majority = max(n_waldo, n_notwaldo)
+    weight_map = {1: n_majority / n_waldo, 0: n_majority / n_notwaldo}
     weights    = [weight_map[l] for l in labels]
     return WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
 
@@ -223,9 +229,51 @@ def compute_metrics(logits, labels, threshold=0.5):
 
     accuracy  = (tp + tn) / (tp + fp + fn + tn + 1e-6)
     precision = tp / (tp + fp + 1e-6)
-    recall  = tp / (tp + fn + 1e-6)
-    f1   = 2 * precision * recall / (precision + recall + 1e-6)
+    recall    = tp / (tp + fn + 1e-6)
+    f1        = 2 * precision * recall / (precision + recall + 1e-6)
     return accuracy, precision, recall, f1
+
+
+# =============================================
+# CONFUSION MATRIX
+# =============================================
+
+def plot_confusion_matrix(logits, labels, save_path="confusion_matrix_cnn.png", threshold=0.5):
+    """Plots and saves a confusion matrix from raw logits and true labels."""
+    probs     = torch.sigmoid(logits).squeeze(1)
+    predicted = (probs >= threshold).long()
+    labels    = labels.squeeze(1).long()
+
+    tp = ((predicted == 1) & (labels == 1)).sum().item()
+    fp = ((predicted == 1) & (labels == 0)).sum().item()
+    fn = ((predicted == 0) & (labels == 1)).sum().item()
+    tn = ((predicted == 0) & (labels == 0)).sum().item()
+
+    matrix = [[tn, fp], [fn, tp]]
+    label_names = ["Not Waldo", "Waldo"]
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(matrix, interpolation="nearest", cmap="Blues")
+    plt.colorbar(im, ax=ax)
+
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, 1])
+    ax.set_xticklabels(label_names, fontsize=12)
+    ax.set_yticklabels(label_names, fontsize=12)
+    ax.set_xlabel("Predicted Label", fontsize=13)
+    ax.set_ylabel("True Label", fontsize=13)
+    ax.set_title("Confusion Matrix — Custom CNN", fontsize=14, fontweight="bold")
+
+    thresh = max(tp, tn, fp, fn) / 2
+    for i, row in enumerate(matrix):
+        for j, val in enumerate(row):
+            ax.text(j, i, str(val), ha="center", va="center",
+                    color="white" if val > thresh else "black", fontsize=14, fontweight="bold")
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    print(f"  Confusion matrix saved: {save_path}")
 
 
 # =============================================
@@ -336,8 +384,9 @@ def train(
             all_labels.append(labels)
 
     acc, prec, rec, f1 = compute_metrics(torch.cat(all_logits), torch.cat(all_labels))
-    
     print(f"  Accuracy: {acc:.3f} | Precision: {prec:.3f} | Recall: {rec:.3f} | F1: {f1:.3f}")
+
+    plot_confusion_matrix(torch.cat(all_logits), torch.cat(all_labels))
 
     return model, history
 
@@ -356,7 +405,6 @@ def predict(image_path, model_path="waldo_cnn_best.pth",
             device = "mps"
         else:
             device = "cpu"
-    pin = (device == "cuda")
     model  = WaldoCNN()
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
