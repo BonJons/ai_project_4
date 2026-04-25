@@ -1,5 +1,5 @@
 """
-Where's Waldo? — CNN From Scratch Classifier
+Waldo? — CNN From Scratch Classifier
 =============================================
 Task    : Classify 256×256 images as Waldo or Not Waldo
 Loss    : BCEWithLogitsLoss
@@ -75,11 +75,13 @@ def build_splits(data_root, val_size=0.15, test_size=0.15, seed=42):
     """
     Builds stratified train / val / test splits.
     """
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
     samples = []
     for label, folder in [(1, "waldo"), (0, "notwaldo")]:
         folder_path = os.path.join(data_root, folder)
         for fname in os.listdir(folder_path):
-            samples.append((os.path.join(folder_path, fname), label))
+            if os.path.splitext(fname)[1].lower() in IMAGE_EXTS:
+                samples.append((os.path.join(folder_path, fname), label))
 
     paths  = [s[0] for s in samples]
     labels = [s[1] for s in samples]
@@ -104,8 +106,7 @@ def build_splits(data_root, val_size=0.15, test_size=0.15, seed=42):
 
 def make_weighted_sampler(file_list):
     """
-    Oversample Waldo images to handle the 9:1 class imbalance. 
-    Assigns Waldo image a weight of 9 and not Waldo a weight of 1 so 
+    Oversampler to correctly handle any imbalanced data set
     """
     labels     = [l for _, l in file_list]
     n_waldo    = max(sum(labels), 1)

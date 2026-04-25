@@ -1,17 +1,15 @@
 """
-Where's Waldo? — YOLOv8 Classifier
+Waldo? — YOLOv8 Classifier
 =====================================
 Task    : Classify 256×256 patches as Waldo or Not Waldo
 Metrics : Accuracy, Precision, Recall, F1
 
 Run:
     python waldo_yolo.py
-    python waldo_yolo.py --predict --image patch.jpg
 """
 
 import os
 import shutil
-import argparse
 from sklearn.model_selection import train_test_split
 
 
@@ -62,31 +60,44 @@ def prepare_dataset(
         print(f"  {cls:10s}: train={len(train_f)} | "
               f"val={len(val_f)} | test={len(test_f)}")
 
-    # Oversample Waldo training patches to match Not Waldo count.
+    # Oversample the minority class to balance training.
     # YOLO has no WeightedRandomSampler — oversampling is the equivalent fix.
     # Val and test are NOT oversampled — evaluation must reflect real distribution.
-    waldo_train_dir   = os.path.join(out_dir, "train", "waldo")
+    waldo_train_dir    = os.path.join(out_dir, "train", "waldo")
     notwaldo_train_dir = os.path.join(out_dir, "train", "notwaldo")
-    waldo_files   = [f for f in os.listdir(waldo_train_dir)
-                     if f.lower().endswith((".png", ".jpg", ".jpeg"))]
-    notwaldo_count = len([f for f in os.listdir(notwaldo_train_dir)
-                          if f.lower().endswith((".png", ".jpg", ".jpeg"))])
 
-    # Duplicate Waldo images until count matches Not Waldo
+    waldo_files    = [f for f in os.listdir(waldo_train_dir)
+                      if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+    notwaldo_files = [f for f in os.listdir(notwaldo_train_dir)
+                      if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+
     import random
     random.seed(42)
-    copies_needed = notwaldo_count - len(waldo_files)
+
+    # Determine which class is the minority and oversample it
+    if len(waldo_files) < len(notwaldo_files):
+        minority_dir   = waldo_train_dir
+        minority_files = waldo_files
+        target_count   = len(notwaldo_files)
+        minority_name  = "waldo"
+    else:
+        minority_dir   = notwaldo_train_dir
+        minority_files = notwaldo_files
+        target_count   = len(waldo_files)
+        minority_name  = "notwaldo"
+
+    copies_needed = target_count - len(minority_files)
     for i in range(copies_needed):
-        src_fname = random.choice(waldo_files)
-        src_path  = os.path.join(waldo_train_dir, src_fname)
+        src_fname = random.choice(minority_files)
+        src_path  = os.path.join(minority_dir, src_fname)
         stem, ext = os.path.splitext(src_fname)
-        dst_path  = os.path.join(waldo_train_dir, f"{stem}_aug{i}{ext}")
+        dst_path  = os.path.join(minority_dir, f"{stem}_aug{i}{ext}")
         shutil.copy(src_path, dst_path)
 
-    final_waldo_count = len([f for f in os.listdir(waldo_train_dir)
-                              if f.lower().endswith((".png", ".jpg", ".jpeg"))])
-    print(f"  Oversampled waldo train: {len(waldo_files)} -> {final_waldo_count} "
-          f"(matches {notwaldo_count} notwaldo)")
+    final_count = len([f for f in os.listdir(minority_dir)
+                       if f.lower().endswith((".png", ".jpg", ".jpeg"))])
+    print(f"  Oversampled {minority_name} train: {len(minority_files)} -> {final_count} "
+          f"(matches {target_count} majority class)")
     print(f"  Dataset ready at: {out_dir}")
     return out_dir
 
@@ -110,7 +121,7 @@ def train(
     from ultralytics import YOLO
 
     print(f"\n{'='*60}")
-    print(f"  Waldo YOLO Classifier Training")
+    print(f"  Waldo YOLO - Classifier Training")
     print(f"  Epochs: {epochs}")
     print(f"{'='*60}")
 
@@ -138,7 +149,6 @@ def train(
         verbose   = True,
     )
 
-    # Ask YOLO directly where it saved — avoids path construction errors
     best_path = str(model.trainer.best)
     return best_path
 
@@ -187,60 +197,21 @@ def evaluate(model_path, test_dir="yolo_data/test"):
 
 
 # =====================================
-# INFERENCE
-# =====================================
-
-def predict(image_path, model_path, threshold=0.5):
-    """Run classifier on a single 256×256 image"""
-    from ultralytics import YOLO
-
-    model   = YOLO(model_path)
-    results = model.predict(image_path, verbose=False)[0]
-
-    pred_name = results.names[results.probs.top1]
-    prob      = float(results.probs.top1conf)
-
-    if pred_name == "notwaldo":
-        prob = 1 - prob
-
-    is_waldo = pred_name == "waldo" and prob >= threshold
-    return {
-        "is_waldo" : is_waldo,
-        "prob"     : prob,
-        "label"    : "Waldo" if is_waldo else "Not Waldo"
-    }
-
-
-# =====================================
 # MAIN
 # =====================================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--predict", action="store_true")
-    parser.add_argument("--image",   type=str, default=None)
-    parser.add_argument("--model",   type=str, default="runs/classify/waldo_yolo/weights/best.pt")
-    args = parser.parse_args()
-
-    DATA_ROOT = "data/"
+    DATA_ROOT = "data_roboflow/"
     YOLO_DIR  = "yolo_data/"
 
-    if args.predict:
-        if not args.image:
-            print("Error: --image required with --predict")
-            exit(1)
-        result = predict(args.image, args.model)
-        print(f"\nPrediction: {result['label']} "
-              f"(confidence: {result['prob']:.1%})")
-    else:
-        prepare_dataset(data_root=DATA_ROOT, out_dir=YOLO_DIR)
+    prepare_dataset(data_root=DATA_ROOT, out_dir=YOLO_DIR)
 
-        best_model = train(
-            data_dir   = YOLO_DIR,
-            model_size = "yolov8n",
-            epochs     = 30,
-            imgsz      = 256,
-            batch      = 16,
-        )
+    best_model = train(
+        data_dir   = YOLO_DIR,
+        model_size = "yolov8n",
+        epochs     = 30,
+        imgsz      = 256,
+        batch      = 16,
+    )
 
-        evaluate(best_model, test_dir=os.path.join(YOLO_DIR, "test"))
+    evaluate(best_model, test_dir=os.path.join(YOLO_DIR, "test"))
